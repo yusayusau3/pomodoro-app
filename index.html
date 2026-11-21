@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ポモドーロタイマー</title>
+  <style>
+    :root { font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif; color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; background: #eaf3ed; color: #183728; transition: background-color .4s, color .4s; }
+    body.break { background: #e7f0fb; color: #183a60; }
+    main { width: min(100%, 480px); padding: clamp(24px, 6vw, 40px); border-radius: 28px; background: rgba(255,255,255,.88); box-shadow: 0 12px 38px rgba(20,45,40,.09); text-align: center; }
+    h1 { margin: 0 0 24px; font-size: clamp(1.4rem, 5vw, 1.8rem); }
+    .timer-face { width: min(100%, 360px); aspect-ratio: 1; display: grid; place-items: center; margin: 0 auto 22px; color: #215c3c; }
+    .break .timer-face { color: #245e9b; }
+    .timer-face > * { grid-area: 1 / 1; }
+    .timer-ring { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+    .ring-track, .ring-progress { fill: none; stroke-width: 3; }
+    .ring-track { stroke: currentColor; opacity: .13; }
+    .ring-progress { stroke: currentColor; stroke-linecap: butt; }
+    .timer-content { text-align: center; width: 88%; }
+    .mode { margin: 0 0 8px; font-size: 1.2rem; font-weight: 700; }
+    .time { margin: 0; color: #183728; font-size: clamp(3.2rem, 12vw, 5rem); font-weight: 750; font-variant-numeric: tabular-nums; letter-spacing: -.06em; line-height: 1.15; }
+    .break .time { color: #183a60; }
+    .notice { min-height: 2.8em; margin: 0 0 16px; font-weight: 600; line-height: 1.4; }
+    .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+    button { min-height: 48px; padding: 10px 20px; border: 2px solid currentColor; border-radius: 12px; background: transparent; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+    button.primary { background: #215c3c; border-color: #215c3c; color: white; }
+    .break button.primary { background: #245e9b; border-color: #245e9b; }
+    button:hover { filter: brightness(.92); }
+    button:focus-visible, input:focus-visible { outline: 3px solid #d37720; outline-offset: 3px; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    .count { margin: 26px 0; font-size: 1.05rem; }
+    .settings { border-top: 1px solid #cddbd2; padding-top: 22px; text-align: left; }
+    .settings h2 { margin: 0 0 14px; font-size: 1.1rem; }
+    .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    label { display: block; font-weight: 650; }
+    input[type=number] { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 7px 10px; border: 1px solid #839b8b; border-radius: 9px; background: white; color: #183728; font: inherit; font-variant-numeric: tabular-nums; }
+    .sound-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; }
+    .sound-row label { display: flex; align-items: center; gap: 8px; }
+    input[type=checkbox] { width: 22px; height: 22px; accent-color: #215c3c; }
+    .help { margin: 12px 0 0; font-size: .85rem; line-height: 1.5; opacity: .8; }
+    @media (max-width: 360px) { main { padding: 20px; } button { padding-inline: 13px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ポモドーロタイマー</h1>
+    <div class="timer-face">
+      <svg class="timer-ring" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+        <circle class="ring-track" cx="50" cy="50" r="46"></circle>
+        <circle class="ring-progress" id="ring-progress" cx="50" cy="50" r="46"></circle>
+      </svg>
+      <div class="timer-content">
+        <p class="mode" id="mode">集中タイム</p>
+        <div class="time" id="time" role="timer" aria-label="残り時間 25分00秒">25:00</div>
+      </div>
+    </div>
+    <p class="notice" id="notice" role="status" aria-live="polite">開始を押してスタート</p>
+    <div class="buttons">
+      <button class="primary" id="start" type="button">開始</button>
+      <button id="pause" type="button" disabled>一時停止</button>
+      <button id="reset" type="button">リセット</button>
+    </div>
+    <p class="count">完了した集中：<strong id="completed">0</strong> 回</p>
+    <section class="settings" aria-label="タイマー設定">
+      <h2>時間と音の設定</h2>
+      <div class="fields">
+        <label for="focus-minutes">集中（分）<input id="focus-minutes" type="number" min="1" max="180" step="1" value="25" inputmode="numeric"></label>
+        <label for="break-minutes">休憩（分）<input id="break-minutes" type="number" min="1" max="180" step="1" value="5" inputmode="numeric"></label>
+      </div>
+      <div class="sound-row">
+        <label for="sound-on"><input id="sound-on" type="checkbox" checked> 音を鳴らす</label>
+        <button id="test-sound" type="button">テスト音</button>
+      </div>
+      <p class="help">時間の変更は次の区間から反映されます。停止中はすぐに反映されます。</p>
+    </section>
+  </main>
+  <script>
+    (() => {
+      const byId = id => document.getElementById(id);
+      const ui = Object.fromEntries([
+        'mode', 'time', 'ring-progress', 'notice', 'start', 'pause', 'reset',
+        'completed', 'focus-minutes', 'break-minutes', 'sound-on', 'test-sound'
+      ].map(id => [id, byId(id)]));
+      let phase = 'focus';
+      let completed = 0;
+      let remaining = 25 * 60 * 1000;
+      let phaseLength = remaining;
+      let deadline = 0;
+      let running = false;
+      let hasStarted = false;
+      let interval = null;
+      let audioContext = null;
+
+      function minutes(input) {
+        const value = Number(input.value);
+        const fallback = input === ui['focus-minutes'] ? 25 : 5;
+        const safe = Number.isInteger(value) ? Math.min(180, Math.max(1, value)) : fallback;
+        input.value = String(safe);
+        return safe;
+      }
+      function duration(which) {
+        const input = which === 'focus' ? ui['focus-minutes'] : ui['break-minutes'];
+        return minutes(input) * 60000;
+      }
+      function render() {
+        const seconds = Math.ceil(Math.max(0, remaining) / 1000);
+        const mm = String(Math.floor(seconds / 60)).padStart(2, '0');
+        const ss = String(seconds % 60).padStart(2, '0');
+        const label = phase === 'focus' ? '集中タイム' : '休憩中';
+        ui.mode.textContent = label;
+        ui.time.textContent = `${mm}:${ss}`;
+        ui.time.setAttribute('aria-label', `残り時間 ${Math.floor(seconds / 60)}分${ss}秒`);
+        const circumference = 2 * Math.PI * 46;
+        const fraction = Math.min(1, Math.max(0, remaining / phaseLength));
+        ui['ring-progress'].setAttribute('stroke-dasharray', `${circumference * fraction} ${circumference}`);
+        ui.completed.textContent = String(completed);
+        ui.start.disabled = running;
+        ui.pause.disabled = !running;
+        document.body.classList.toggle('break', phase === 'break');
+        document.title = `${mm}:${ss} ${label}｜ポモドーロタイマー`;
+      }
+      async function prepareAudio() {
+        if (!ui.sound.checked) return;
+        try {
+          audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+          if (audioContext.state === 'suspended') await audioContext.resume();
+        } catch (_) { /* 音声機能が使えない環境でもタイマーは動かす */ }
+      }
+      async function beep(pulsed = false) {
+        if (!ui.sound.checked) return;
+        await prepareAudio();
+        if (!audioContext || audioContext.state !== 'running') return;
+        const now = audioContext.currentTime;
+        const oscillator = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        oscillator.type = 'sine';
+        oscillator.frequency.value = 880;
+        const pulseCount = pulsed ? 5 : 1;
+        for (let i = 0; i < pulseCount; i++) {
+          const start = now + i * 0.3;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.18, start + 0.01);
+          gain.gain.setValueAtTime(0.18, start + 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.14);
+        }
+        oscillator.connect(gain).connect(audioContext.destination);
+        oscillator.start(now);
+        oscillator.stop(now + pulseCount * 0.3);
+      }
+      function tick() {
+        if (!running) return;
+        const now = Date.now();
+        let transitions = 0;
+        while (now >= deadline && transitions < 10000) {
+          if (phase === 'focus') completed++;
+          phase = phase === 'focus' ? 'break' : 'focus';
+          phaseLength = duration(phase);
+          deadline += phaseLength;
+          transitions++;
+        }
+        if (transitions) {
+          ui.notice.textContent = phase === 'break' ? '集中完了！休憩を始めましょう。' : '休憩終了！集中を始めましょう。';
+          beep();
+        }
+        remaining = Math.max(0, deadline - now);
+        render();
+      }
+      ui.start.addEventListener('click', () => {
+        if (running) return;
+        prepareAudio();
+        if (!hasStarted) remaining = phaseLength = duration(phase);
+        deadline = Date.now() + remaining;
+        running = true;
+        hasStarted = true;
+        ui.notice.textContent = phase === 'focus' ? '集中しましょう。' : '休憩しましょう。';
+        interval = setInterval(tick, 250);
+        render();
+      });
+      ui.pause.addEventListener('click', () => {
+        tick();
+        if (!running) return;
+        running = false;
+        clearInterval(interval);
+        remaining = Math.max(0, deadline - Date.now());
+        ui.notice.textContent = '一時停止中';
+        render();
+      });
+      ui.reset.addEventListener('click', () => {
+        running = false;
+        clearInterval(interval);
+        phase = 'focus';
+        completed = 0;
+        hasStarted = false;
+        remaining = phaseLength = duration('focus');
+        ui.notice.textContent = 'リセットしました。開始を押してスタート';
+        render();
+      });
+      for (const input of [ui['focus-minutes'], ui['break-minutes']]) {
+        input.addEventListener('change', () => {
+          minutes(input);
+          if (!hasStarted && input === ui['focus-minutes']) remaining = phaseLength = duration('focus');
+          render();
+        });
+      }
+      ui['sound-on'].addEventListener('change', () => { if (ui['sound-on'].checked) prepareAudio(); });
+      ui['test-sound'].addEventListener('click', () => beep(true));
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+      render();
+    })();
+  </script>
+</body>
+</html>
